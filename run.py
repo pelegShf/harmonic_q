@@ -15,6 +15,8 @@ from hq.plotting import save_curve, mean_se_plot
 # Register custom envs (safe no-ops if unused)
 import envs.velocity_grid      # VelocityGrid-v0
 import envs.multistep_grid     # MultiStepGrid-v0
+import envs.windy_gridworld  # registers WindyGrid-* variants
+
 
 def parse_seeds(s: str):
     out = []

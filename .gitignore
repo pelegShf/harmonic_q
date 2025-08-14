@@ -1,3 +1,5 @@
 **/logs/*
 **/videos/*
 **/__pycache__/*
+**/plots/harmonic/*
+**/plots/standard/*
