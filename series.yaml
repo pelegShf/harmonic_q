@@ -8,7 +8,11 @@ eps_end: 0.05
 eps_decay_episodes: 7600
 max_steps_per_ep: 300
 eval_episodes: 50
-smooth: 1
+smooth: 300
+
+alpha_schedule: constant      # {constant, 1_over_n, c_over_c_plus_n, power}
+alpha_c: 1.0
+alpha_kappa: 0.5
 
 models:
   standard_a02:
@@ -29,6 +33,18 @@ models:
     gamma: 0.99
     eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
 
+  standard_power06:
+    variant: standard
+    alpha: 0.20
+    alpha_schedule: power
+    alpha_kappa: 0.6
+
+  harmonic_power06:
+    variant: harmonic
+    alpha: 0.30
+    alpha_schedule: power
+    alpha_kappa: 0.6
+
 experiments:
   - id: mc16k
     file: experiments/mountaincar.yaml
@@ -37,3 +53,19 @@ experiments:
   - id: windy8k
     file: experiments/windy.yaml
     models: [standard_a02, harmonic_a03]
+
+  - id: mc16k_rm
+    file: experiments/mountaincar.yaml
+    models: [standard_rm, harmonic_rm, standard_power06, harmonic_power06]
+    overrides:
+      # shorten epsilon decay so learning shows earlier
+      standard_rm:       { eps: { decay_episodes: 4000 } }
+      harmonic_rm:       { eps: { decay_episodes: 4000 } }
+      standard_power06:  { eps: { decay_episodes: 4000 } }
+      harmonic_power06:  { eps: { decay_episodes: 4000 } }
+
+
+        # Windy — gentler c/(c+n) schedule on both variants
+  - id: windy8k_c20
+    file: experiments/windy.yaml
+    models: [standard_c20, harmonic_c20]

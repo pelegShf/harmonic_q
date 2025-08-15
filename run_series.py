@@ -164,17 +164,27 @@ def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
     eval_eps = int(exp.get("eval_episodes", series.get("eval_episodes", 50)))
     gamma = float(series.get("gamma", 0.99))
 
+    # NEW: global (series-level) defaults for decaying stepsizes
+    alpha_schedule_default = series.get("alpha_schedule", "constant")
+    alpha_c_default       = float(series.get("alpha_c", 1.0))
+    alpha_kappa_default   = float(series.get("alpha_kappa", 0.5))
+
     base_log_root = series.get("log_root", "logs")
     for mid, mcfg in models.items():
         variant = mcfg["variant"]
         alpha = float(mcfg.get("alpha", series.get("alpha", 0.2)))
+
+        # epsilon schedule (unchanged)
         eps = mcfg.get("eps", {})
         eps_start = float(eps.get("start", series.get("eps_start", 1.0)))
-        eps_end = float(eps.get("end", series.get("eps_end", 0.05)))
-        eps_decay = int(
-            eps.get("decay_episodes", series.get("eps_decay_episodes", episodes - 500))
-        )
-        gamma_m = float(mcfg.get("gamma", gamma))
+        eps_end   = float(eps.get("end",   series.get("eps_end", 0.05)))
+        eps_decay = int(eps.get("decay_episodes", series.get("eps_decay_episodes", episodes - 500)))
+        gamma_m   = float(mcfg.get("gamma", gamma))
+
+        # NEW: per-model overrides for decaying stepsizes
+        alpha_schedule = mcfg.get("alpha_schedule", alpha_schedule_default)          # {"constant","1_over_n","c_over_c_plus_n","power"}
+        alpha_c        = float(mcfg.get("alpha_c", alpha_c_default))                 # used by c/(c+n)
+        alpha_kappa    = float(mcfg.get("alpha_kappa", alpha_kappa_default))         # used by power law
 
         log_root = os.path.join(base_log_root, exp["id"])
         model_root = os.path.join(log_root, mid, variant)
@@ -192,15 +202,16 @@ def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
                     eps_decay,
                     max_steps,
                     sd,
+                    alpha_schedule=alpha_schedule,
+                    alpha_c=alpha_c,
+                    alpha_kappa=alpha_kappa,
                 )
                 out_dir = os.path.join(model_root, f"s{sd}")
                 ensure_dir(out_dir)
                 save_csv(os.path.join(out_dir, f"{variant}_returns.csv"), rets)
                 save_csv(os.path.join(out_dir, f"{variant}_steps.csv"), steps)
                 save_csv(os.path.join(out_dir, f"{variant}_time.csv"), times)
-            print(
-                f"[train] {exp['id']} :: {mid} ({variant}) — seeds={seeds} episodes={episodes}"
-            )
+            print(f"[train] {exp['id']} :: {mid} ({variant}) — seeds={seeds} episodes={episodes}")
 
         if task in ("plot", "all"):
             plot_model_aggregates(exp, series, mid, mcfg)
