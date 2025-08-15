@@ -5,11 +5,18 @@ from typing import Tuple, List
 import numpy as np
 import gymnasium as gym
 
+
 def epsilon_greedy(Q: np.ndarray, s: int, eps: float, rng: np.random.Generator) -> int:
     return int(rng.integers(Q.shape[1])) if rng.random() < eps else int(np.argmax(Q[s]))
 
-def safe_harmonic_update(q_sa: float, target: float, alpha: float,
-                         eps_div: float = 1e-8, shift_eps: float = 1e-6) -> float:
+
+def safe_harmonic_update(
+    q_sa: float,
+    target: float,
+    alpha: float,
+    eps_div: float = 1e-8,
+    shift_eps: float = 1e-6,
+) -> float:
     # Weighted harmonic step with positivity shift.
     sft = min(q_sa, target, 0.0) - shift_eps
     q_ = q_sa - sft
@@ -18,16 +25,19 @@ def safe_harmonic_update(q_sa: float, target: float, alpha: float,
     q_new_ = 1.0 / max(inv_new, eps_div)
     return q_new_ + sft
 
-def train_one(env_id: str,
-              variant: str,
-              episodes: int,
-              alpha: float,
-              gamma: float,
-              eps_start: float,
-              eps_end: float,
-              eps_decay_episodes: int,
-              max_steps_per_ep: int,
-              seed: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+
+def train_one(
+    env_id: str,
+    variant: str,
+    episodes: int,
+    alpha: float,
+    gamma: float,
+    eps_start: float,
+    eps_end: float,
+    eps_decay_episodes: int,
+    max_steps_per_ep: int,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Returns:
       Q:      [nS, nA]
@@ -36,8 +46,9 @@ def train_one(env_id: str,
       times:   per-episode accumulated 'time' (sum of info['dt'] if provided; else ~steps)
     """
     env = gym.make(env_id)
-    assert hasattr(env.observation_space, "n") and hasattr(env.action_space, "n"), \
-        "This trainer expects discrete state/action spaces."
+    assert hasattr(env.observation_space, "n") and hasattr(
+        env.action_space, "n"
+    ), "This trainer expects discrete state/action spaces."
 
     nS, nA = env.observation_space.n, env.action_space.n
     Q = np.zeros((nS, nA), dtype=float)
@@ -79,13 +90,18 @@ def train_one(env_id: str,
         steps.append(step_count)
         times.append(ep_time)
         if (ep + 1) % 100 == 0:
-            print(f"[{variant}] ep {ep+1}/{episodes} avg_ret={np.mean(rets):.3f} "
-                  f"avg_steps={np.mean(steps):.2f} avg_time={np.mean(times):.3f}")
+            print(
+                f"[{variant}] ep {ep+1}/{episodes} avg_ret={np.mean(rets):.3f} "
+                f"avg_steps={np.mean(steps):.2f} avg_time={np.mean(times):.3f}"
+            )
 
     env.close()
     return Q, np.asarray(rets, float), np.asarray(steps, int), np.asarray(times, float)
 
-def evaluate_greedy(env_id: str, Q: np.ndarray, episodes: int = 20, seed: int = 1337) -> float:
+
+def evaluate_greedy(
+    env_id: str, Q: np.ndarray, episodes: int = 20, seed: int = 1337
+) -> float:
     env = gym.make(env_id)
     total = 0.0
     for ep in range(episodes):

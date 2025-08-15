@@ -9,6 +9,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium.envs.registration import register
 
+
 class MultiStepGrid(gym.Env):
     """
     State: (x,y) encoded -> int.
@@ -19,13 +20,21 @@ class MultiStepGrid(gym.Env):
       - 'mag'           : chosen magnitude m
       - 'brake_penalty' : max(0, prev_m - m)
     """
+
     metadata = {"render_modes": ["rgb_array", "ansi"], "render_fps": 8}
 
-    def __init__(self, size=8, max_steps=200, step_cost=-1.0,
-                 cliff_penalty=-100.0, goal_reward=100.0,
-                 time_cost=0.0,          # if >0, add -time_cost*dt to reward
-                 brake_cost=0.0,         # if >0, add -brake_cost*brake_penalty to reward
-                 render_mode=None, seed=None):
+    def __init__(
+        self,
+        size=8,
+        max_steps=200,
+        step_cost=-1.0,
+        cliff_penalty=-100.0,
+        goal_reward=100.0,
+        time_cost=0.0,  # if >0, add -time_cost*dt to reward
+        brake_cost=0.0,  # if >0, add -brake_cost*brake_penalty to reward
+        render_mode=None,
+        seed=None,
+    ):
         super().__init__()
         self.W = self.H = int(size)
         self.max_steps = int(max_steps)
@@ -52,10 +61,14 @@ class MultiStepGrid(gym.Env):
         # Order: [R1,R2,R3, L1,L2,L3, U1,U2,U3, D1,D2,D3]
         dir_idx, mag_idx = divmod(int(a), 3)  # dir ∈ {0..3}, mag_idx ∈ {0,1,2}
         m = mag_idx + 1
-        if dir_idx == 0: dx, dy = +1, 0   # Right
-        elif dir_idx == 1: dx, dy = -1, 0 # Left
-        elif dir_idx == 2: dx, dy = 0, -1 # Up
-        else:              dx, dy = 0, +1 # Down
+        if dir_idx == 0:
+            dx, dy = +1, 0  # Right
+        elif dir_idx == 1:
+            dx, dy = -1, 0  # Left
+        elif dir_idx == 2:
+            dx, dy = 0, -1  # Up
+        else:
+            dx, dy = 0, +1  # Down
         return dx, dy, m
 
     def _enc(self, x, y):  # (x,y) -> int
@@ -96,7 +109,7 @@ class MultiStepGrid(gym.Env):
         terminated = truncated = False
 
         # Check cliffs along the path (including final cell)
-        for (px, py) in path:
+        for px, py in path:
             if self._is_cliff(px, py):
                 r = self.cliff_penalty
                 self._pos = (px, py)
@@ -112,7 +125,7 @@ class MultiStepGrid(gym.Env):
                 truncated = True
 
         # Time and braking metrics (reported via info)
-        dt = 1.0 / float(m)                 # faster for bigger moves
+        dt = 1.0 / float(m)  # faster for bigger moves
         brake = max(0, self._prev_mag - m)  # penalty when slowing down
         self._prev_mag = m
 
@@ -133,10 +146,14 @@ class MultiStepGrid(gym.Env):
             for j in range(self.H):
                 row = []
                 for i in range(self.W):
-                    if (i, j) == (x, y): row.append("A")
-                    elif (i, j) == self.goal: row.append("G")
-                    elif self._is_cliff(i, j): row.append("C")
-                    else: row.append(".")
+                    if (i, j) == (x, y):
+                        row.append("A")
+                    elif (i, j) == self.goal:
+                        row.append("G")
+                    elif self._is_cliff(i, j):
+                        row.append("C")
+                    else:
+                        row.append(".")
                 rows.append(" ".join(row))
             return "\n".join(rows)
         elif self.render_mode == "rgb_array":
@@ -159,6 +176,7 @@ class MultiStepGrid(gym.Env):
             img[y0:y1, x0:x1] = [90, 140, 240]
             return img
         return None
+
 
 # Register (idempotent)
 try:

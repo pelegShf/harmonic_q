@@ -15,10 +15,21 @@ class VelocityGrid(gym.Env):
     Rewards: step -1, goal +100, cliff -100
     Layout: start=(0,H-1), goal=(W-1,H-1), cliff bottom row cells 1..W-2
     """
+
     metadata = {"render_modes": ["rgb_array", "ansi"], "render_fps": 8}
 
-    def __init__(self, size=8, max_speed=4, max_steps=200, slip_prob=0.05,
-                 step_cost=-1.0, cliff_penalty=-100.0, goal_reward=100.0, render_mode=None, seed=None):
+    def __init__(
+        self,
+        size=8,
+        max_speed=4,
+        max_steps=200,
+        slip_prob=0.05,
+        step_cost=-1.0,
+        cliff_penalty=-100.0,
+        goal_reward=100.0,
+        render_mode=None,
+        seed=None,
+    ):
         super().__init__()
         self.W = self.H = int(size)
         self.max_speed = int(max_speed)
@@ -44,14 +55,18 @@ class VelocityGrid(gym.Env):
     def _enc(self, x, y, vx, vy):
         vx_i = vx + self.max_speed
         vy_i = vy + self.max_speed
-        return (((y * self.W + x) * self.v_levels + vx_i) * self.v_levels + vy_i)
+        return ((y * self.W + x) * self.v_levels + vx_i) * self.v_levels + vy_i
 
     def _dec(self, s):
-        vy_i = s % self.v_levels; s //= self.v_levels
-        vx_i = s % self.v_levels; s //= self.v_levels
+        vy_i = s % self.v_levels
+        s //= self.v_levels
+        vx_i = s % self.v_levels
+        s //= self.v_levels
         xy = s
-        x = xy % self.W; y = xy // self.W
-        vx = vx_i - self.max_speed; vy = vy_i - self.max_speed
+        x = xy % self.W
+        y = xy // self.W
+        vx = vx_i - self.max_speed
+        vy = vy_i - self.max_speed
         return x, y, vx, vy
 
     def _is_cliff(self, x, y):
@@ -71,16 +86,22 @@ class VelocityGrid(gym.Env):
         x, y, vx, vy = self._state_tuple
 
         ax = ay = 0
-        if a == 1: ay = -1
-        elif a == 2: ay = +1
-        elif a == 3: ax = -1
-        elif a == 4: ax = +1
+        if a == 1:
+            ay = -1
+        elif a == 2:
+            ay = +1
+        elif a == 3:
+            ax = -1
+        elif a == 4:
+            ax = +1
 
         # slip/noise occasionally
         if self._rng.random() < self.slip_prob:
             ax2, ay2 = self._rng.integers(-1, 2), self._rng.integers(-1, 2)
-            if ax == 0: ax = int(ax2)
-            if ay == 0: ay = int(ay2)
+            if ax == 0:
+                ax = int(ax2)
+            if ay == 0:
+                ay = int(ay2)
 
         vx = int(np.clip(vx + ax, -self.max_speed, self.max_speed))
         vy = int(np.clip(vy + ay, -self.max_speed, self.max_speed))
@@ -92,9 +113,11 @@ class VelocityGrid(gym.Env):
         terminated = truncated = False
 
         if (nx, ny) == self.goal:
-            r = self.goal_reward; terminated = True
+            r = self.goal_reward
+            terminated = True
         elif self._is_cliff(nx, ny):
-            r = self.cliff_penalty; terminated = True
+            r = self.cliff_penalty
+            terminated = True
         elif self._t >= self.max_steps:
             truncated = True
 
@@ -108,10 +131,14 @@ class VelocityGrid(gym.Env):
             for j in range(self.H):
                 row = []
                 for i in range(self.W):
-                    if (i, j) == (x, y): row.append("A")
-                    elif (i, j) == self.goal: row.append("G")
-                    elif self._is_cliff(i, j): row.append("C")
-                    else: row.append(".")
+                    if (i, j) == (x, y):
+                        row.append("A")
+                    elif (i, j) == self.goal:
+                        row.append("G")
+                    elif self._is_cliff(i, j):
+                        row.append("C")
+                    else:
+                        row.append(".")
                 rows.append(" ".join(row))
             return "\n".join(rows) + f"\n(v=({vx},{vy}))"
 

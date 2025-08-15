@@ -13,12 +13,25 @@ import imageio.v2 as imageio
 
 # ------------------------- simple single-episode recorder -------------------------
 
-def record_video(env_id: str, Q: np.ndarray, out_dir: str, name_prefix: str, seed: int, max_steps: int = 500):
+
+def record_video(
+    env_id: str,
+    Q: np.ndarray,
+    out_dir: str,
+    name_prefix: str,
+    seed: int,
+    max_steps: int = 500,
+):
     """Record one greedy rollout using Gymnasium's RecordVideo (rgb_array mode)."""
     try:
         os.makedirs(out_dir, exist_ok=True)
         env = gym.make(env_id, render_mode="rgb_array")
-        env = RecordVideo(env, video_folder=out_dir, episode_trigger=lambda ep: ep == 0, name_prefix=name_prefix)
+        env = RecordVideo(
+            env,
+            video_folder=out_dir,
+            episode_trigger=lambda ep: ep == 0,
+            name_prefix=name_prefix,
+        )
         s, _ = env.reset(seed=seed)
         for _ in range(max_steps):
             a = int(np.argmax(Q[s]))
@@ -30,13 +43,16 @@ def record_video(env_id: str, Q: np.ndarray, out_dir: str, name_prefix: str, see
     except Exception as e:
         print(f"[video] skipped (no rgb render?): {e}")
 
+
 # ------------------------- grid of trajectories (3x3, etc.) -------------------------
 
 try:
     from PIL import Image, ImageDraw, ImageFont  # for ANSI fallback
+
     _PIL_OK = True
 except Exception:
     _PIL_OK = False
+
 
 def _ansi_to_image(txt: str, pad: int = 8) -> np.ndarray:
     """Render ANSI text to an RGB image for video fallback."""
@@ -59,7 +75,10 @@ def _ansi_to_image(txt: str, pad: int = 8) -> np.ndarray:
         y += ch_h
     return np.asarray(img, dtype=np.uint8)
 
-def _rollout_frames(env_id: str, Q: np.ndarray, seed: int, max_steps: int) -> Tuple[List[np.ndarray], str]:
+
+def _rollout_frames(
+    env_id: str, Q: np.ndarray, seed: int, max_steps: int
+) -> Tuple[List[np.ndarray], str]:
     """
     Run one greedy rollout and return list of frames and mode ('rgb' or 'ansi').
     Tries rgb_array first; falls back to ansi text → image.
@@ -107,6 +126,7 @@ def _rollout_frames(env_id: str, Q: np.ndarray, seed: int, max_steps: int) -> Tu
         # make a placeholder tile so grid still works
         return [np.ones((64, 64, 3), dtype=np.uint8) * 200], "none"
 
+
 def _pad_to(frames: List[np.ndarray], length: int) -> List[np.ndarray]:
     """Pad a trajectory with its last frame to reach a uniform length."""
     if not frames:
@@ -117,6 +137,7 @@ def _pad_to(frames: List[np.ndarray], length: int) -> List[np.ndarray]:
         frames.append(last)
     return frames
 
+
 def _tile_frame_grid(frame_rows: List[List[np.ndarray]]) -> np.ndarray:
     """Tile frames in a grid: frame_rows[r][c] must be same H×W×3 per row/col."""
     # normalize sizes per row
@@ -125,7 +146,8 @@ def _tile_frame_grid(frame_rows: List[List[np.ndarray]]) -> np.ndarray:
         # height match by padding/cropping if needed (rare)
         Hs = [img.shape[0] for img in row]
         Ws = [img.shape[1] for img in row]
-        H = max(Hs); W = max(Ws)
+        H = max(Hs)
+        W = max(Ws)
         fixed = []
         for img in row:
             h, w = img.shape[:2]
@@ -135,6 +157,7 @@ def _tile_frame_grid(frame_rows: List[List[np.ndarray]]) -> np.ndarray:
             fixed.append(pad)
         row_imgs.append(np.concatenate(fixed, axis=1))
     return np.concatenate(row_imgs, axis=0)
+
 
 def record_trajectories_grid(
     env_id: str,

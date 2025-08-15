@@ -27,8 +27,8 @@ class WindyGrid(gym.Env):
         wind: list[int] | None = None,
         start: tuple[int, int] = (0, 3),
         goal: tuple[int, int] = (7, 3),
-        king_moves: bool = False,         # 4 actions if False, 8 actions if True
-        stochastic_wind_p: float = 0.0,   # probability wind is offset by ±1 (split evenly)
+        king_moves: bool = False,  # 4 actions if False, 8 actions if True
+        stochastic_wind_p: float = 0.0,  # probability wind is offset by ±1 (split evenly)
         step_cost: float = -1.0,
         goal_reward: float = 0.0,
         max_steps: int = 200,
@@ -38,7 +38,9 @@ class WindyGrid(gym.Env):
         super().__init__()
         self.W = int(width)
         self.H = int(height)
-        self.wind = np.array(wind if wind is not None else [0,0,0,1,1,1,2,2,1,0], dtype=int)
+        self.wind = np.array(
+            wind if wind is not None else [0, 0, 0, 1, 1, 1, 2, 2, 1, 0], dtype=int
+        )
         assert len(self.wind) == self.W, "len(wind) must equal width"
         self.start = tuple(start)
         self.goal = tuple(goal)
@@ -63,10 +65,19 @@ class WindyGrid(gym.Env):
     def _moves(self):
         if self.king_moves:
             # 8-neighbors (dx,dy): E,W,N,S, NE,NW,SE,SW (order not important)
-            return [(+1,0), (-1,0), (0,-1), (0,+1), (+1,-1), (-1,-1), (+1,+1), (-1,+1)]
+            return [
+                (+1, 0),
+                (-1, 0),
+                (0, -1),
+                (0, +1),
+                (+1, -1),
+                (-1, -1),
+                (+1, +1),
+                (-1, +1),
+            ]
         else:
             # 4-neighbors: E,W,N,S   (note: y grows downward; wind pushes toward smaller y)
-            return [(+1,0), (-1,0), (0,-1), (0,+1)]
+            return [(+1, 0), (-1, 0), (0, -1), (0, +1)]
 
     # ---------- Gym API ----------
     def reset(self, *, seed: int | None = None, options=None):
@@ -96,10 +107,10 @@ class WindyGrid(gym.Env):
         self._pos = (nx, ny)
 
         r = self.step_cost
-        terminated = (self._pos == self.goal)
+        terminated = self._pos == self.goal
         if terminated:
             r += self.goal_reward
-        truncated = (self._t >= self.max_steps)
+        truncated = self._t >= self.max_steps
 
         obs = self._enc(*self._pos)
         info = {"wind_applied": w}
@@ -112,8 +123,10 @@ class WindyGrid(gym.Env):
             for j in range(self.H):
                 row = []
                 for i in range(self.W):
-                    if (i, j) == (x, y): row.append("A")
-                    elif (i, j) == self.goal: row.append("G")
+                    if (i, j) == (x, y):
+                        row.append("A")
+                    elif (i, j) == self.goal:
+                        row.append("G")
                     else:
                         row.append(str(self.wind[i]) if j == 0 else ".")
                 rows.append(" ".join(row))
@@ -148,21 +161,26 @@ class WindyGrid(gym.Env):
 
 # -------------------- Register common variants (idempotent) --------------------
 
+
 def _register():
     try:
-        register(id="WindyGrid-v0",
-                 entry_point=lambda **kw: WindyGrid(**kw))
+        register(id="WindyGrid-v0", entry_point=lambda **kw: WindyGrid(**kw))
     except Exception:
         pass
     try:
-        register(id="WindyGridKings-v0",
-                 entry_point=lambda **kw: WindyGrid(king_moves=True, **kw))
+        register(
+            id="WindyGridKings-v0",
+            entry_point=lambda **kw: WindyGrid(king_moves=True, **kw),
+        )
     except Exception:
         pass
     try:
-        register(id="WindyGridStoch-v0",
-                 entry_point=lambda **kw: WindyGrid(stochastic_wind_p=0.1, **kw))
+        register(
+            id="WindyGridStoch-v0",
+            entry_point=lambda **kw: WindyGrid(stochastic_wind_p=0.1, **kw),
+        )
     except Exception:
         pass
+
 
 _register()

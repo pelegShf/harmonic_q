@@ -1,0 +1,6 @@
+# experiments/windy.yaml
+env: WindyGrid-v0
+seed_spec: "0-4"
+episodes: 8000
+max_steps_per_ep: 300
+eval_episodes: 50

@@ -3,3 +3,6 @@
 **/__pycache__/*
 **/plots/harmonic/*
 **/plots/standard/*
+
+.DS_Store
+**./venv/*

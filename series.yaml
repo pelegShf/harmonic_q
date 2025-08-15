@@ -1,0 +1,39 @@
+# series.yaml — define models and which experiments to run
+log_root: logs
+plots_root: plots
+gamma: 0.99
+episodes: 8000
+eps_start: 1.0
+eps_end: 0.05
+eps_decay_episodes: 7600
+max_steps_per_ep: 300
+eval_episodes: 50
+smooth: 1
+
+models:
+  standard_a02:
+    variant: standard
+    alpha: 0.20
+    gamma: 0.99
+    eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
+
+  harmonic_a03:
+    variant: harmonic
+    alpha: 0.30
+    gamma: 0.99
+    eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
+
+  harmonic_a035:
+    variant: harmonic
+    alpha: 0.35
+    gamma: 0.99
+    eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
+
+experiments:
+  - id: mc16k
+    file: experiments/mountaincar.yaml
+    models: [standard_a02, harmonic_a03, harmonic_a035]
+
+  - id: windy8k
+    file: experiments/windy.yaml
+    models: [standard_a02, harmonic_a03]
