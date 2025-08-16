@@ -61,53 +61,39 @@ def safe_harmonic_update(
     q_new_ = 1.0 / max(inv_new, eps_div)
     return q_new_ + sft
 
-def train_one(env_id: str,
-              variant: str,
-              episodes: int,
-              alpha: float,
-              gamma: float,
-              eps_start: float,
-              eps_end: float,
-              eps_decay_episodes: int,
-              max_steps_per_ep: int,
-              seed: int,
-              alpha_schedule: str = "constant",         # {"constant","1_over_n","c_over_c_plus_n","power"}
-              alpha_c: float = 1.0,                     # for c/(c+n)
-              alpha_kappa: float = 0.5                  # for power law
-              ):
-    import gymnasium as gym
-    import numpy as np
-
+def train_one(env_id: str, variant: str, episodes: int, alpha: float, gamma: float,
+              eps_start: float, eps_end: float, eps_decay_episodes: int,
+              max_steps_per_ep: int, seed: int,
+              # schedules:
+              alpha_schedule: str = "constant",   # {"constant","1_over_n","c_over_c_plus_n","power"}
+              alpha_c: float = 1.0,
+              alpha_kappa: float = 0.5):
+    import gymnasium as gym, numpy as np
     rng = np.random.default_rng(seed)
     env = gym.make(env_id)
 
-    nS = env.observation_space.n
-    nA = env.action_space.n
+    nS = env.observation_space.n; nA = env.action_space.n
     Q = np.zeros((nS, nA), dtype=np.float64)
 
-    # --- per-(s,a) Robbins–Monro stepsize ---
+    # per-(s,a) Robbins–Monro stepsize
     _counts = np.zeros((nS, nA), dtype=np.int64)
     def alpha_of(s: int, a: int) -> float:
-        n = _counts[s, a]  # visits so far (before this update)
+        n = _counts[s, a]
         if alpha_schedule == "1_over_n":
             a0 = 1.0 / max(1, n + 1)
         elif alpha_schedule == "c_over_c_plus_n":
             a0 = alpha_c / (alpha_c + n + 1e-9)
         elif alpha_schedule == "power":
             a0 = alpha / ((1 + n) ** alpha_kappa)
-        else:  # "constant"
+        else:
             a0 = alpha
         _counts[s, a] = n + 1
         return float(a0)
 
     rets, steps, times = [], [], []
-
     for ep in range(episodes):
         s, _ = env.reset(seed=seed + ep)
-        ret = 0.0
-        step_count = 0
-        ep_time = 0.0
-
+        ret = 0.0; step_count = 0; ep_time = 0.0
         t = min(1.0, ep / max(1, eps_decay_episodes))
         eps = eps_start + (eps_end - eps_start) * t
 
@@ -118,7 +104,7 @@ def train_one(env_id: str,
             done = term or trunc
 
             y = r if done else r + gamma * np.max(Q[s2])
-            alpha_eff = alpha_of(s, a)  # << NEW: decaying step size
+            alpha_eff = alpha_of(s, a)
 
             if variant == "standard":
                 Q[s, a] = (1.0 - alpha_eff) * Q[s, a] + alpha_eff * y
@@ -128,22 +114,19 @@ def train_one(env_id: str,
                 raise ValueError("variant must be 'standard' or 'harmonic'")
 
             ret += r
-            ep_time += float(info.get("dt", 1.0))  # default 1.0 if env doesn't provide
+            ep_time += float(info.get("dt", 1.0))
             s = s2
             if done:
                 break
 
-        rets.append(ret)
-        steps.append(step_count)
-        times.append(ep_time)
+        rets.append(ret); steps.append(step_count); times.append(ep_time)
         if (ep + 1) % 100 == 0:
-            print(
-                f"[{variant}] ep {ep+1}/{episodes} avg_ret={np.mean(rets):.3f} "
-                f"avg_steps={np.mean(steps):.2f} avg_time={np.mean(times):.3f}"
-            )
+            print(f"[{variant}] ep {ep+1}/{episodes} avg_ret={np.mean(rets):.3f} "
+                  f"avg_steps={np.mean(steps):.2f} avg_time={np.mean(times):.3f}")
 
     env.close()
     return Q, np.asarray(rets, float), np.asarray(steps, int), np.asarray(times, float)
+
 
 def evaluate_greedy(
     env_id: str, Q: np.ndarray, episodes: int = 20, seed: int = 1337

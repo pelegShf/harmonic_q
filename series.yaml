@@ -8,64 +8,42 @@ eps_end: 0.05
 eps_decay_episodes: 7600
 max_steps_per_ep: 300
 eval_episodes: 50
-smooth: 300
+smooth: 500
 
 alpha_schedule: constant      # {constant, 1_over_n, c_over_c_plus_n, power}
 alpha_c: 1.0
 alpha_kappa: 0.5
 
 models:
+  ############## Standard ##############
+  standard_a01:
+    variant: standard
+    alpha: 0.05
+    eps: {start: 1.0, end: 0.05, decay_episodes: 10000}  
+
   standard_a02:
     variant: standard
     alpha: 0.20
-    gamma: 0.99
-    eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
+    eps: {start: 1.0, end: 0.05, decay_episodes: 10000}
 
-  harmonic_a03:
+
+
+############## Harmonic ##############
+  harmonic_a01:
+      variant: harmonic
+      alpha: 0.10
+      eps: {start: 1.0, end: 0.05, decay_episodes: 10000}
+
+  harmonic_a02:
     variant: harmonic
-    alpha: 0.30
-    gamma: 0.99
-    eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
-
-  harmonic_a035:
-    variant: harmonic
-    alpha: 0.35
-    gamma: 0.99
-    eps: {start: 1.0, end: 0.05, decay_episodes: 4000}
-
-  standard_power06:
-    variant: standard
-    alpha: 0.20
-    alpha_schedule: power
-    alpha_kappa: 0.6
-
-  harmonic_power06:
-    variant: harmonic
-    alpha: 0.30
-    alpha_schedule: power
-    alpha_kappa: 0.6
+    alpha: 0.05
+    eps: {start: 1.0, end: 0.05, decay_episodes: 10000}
 
 experiments:
-  - id: mc16k
+  - id: compare_mc
     file: experiments/mountaincar.yaml
-    models: [standard_a02, harmonic_a03, harmonic_a035]
+    models: [  standard_a01,standard_a02, harmonic_a01, harmonic_a02]
 
-  - id: windy8k
+  - id: compare_windy
     file: experiments/windy.yaml
-    models: [standard_a02, harmonic_a03]
-
-  - id: mc16k_rm
-    file: experiments/mountaincar.yaml
-    models: [standard_rm, harmonic_rm, standard_power06, harmonic_power06]
-    overrides:
-      # shorten epsilon decay so learning shows earlier
-      standard_rm:       { eps: { decay_episodes: 4000 } }
-      harmonic_rm:       { eps: { decay_episodes: 4000 } }
-      standard_power06:  { eps: { decay_episodes: 4000 } }
-      harmonic_power06:  { eps: { decay_episodes: 4000 } }
-
-
-        # Windy — gentler c/(c+n) schedule on both variants
-  - id: windy8k_c20
-    file: experiments/windy.yaml
-    models: [standard_c20, harmonic_c20]
+    models: [  standard_a01,standard_a02, harmonic_a01, harmonic_a02]

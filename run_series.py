@@ -107,12 +107,20 @@ def plot_model_aggregates(exp: dict, series: dict, model_id: str, model_cfg: dic
         )
         print(f"[plot] {out_path}")
 
-
 def compare_models_within_experiment(exp: dict, series: dict, models: Dict[str, dict]):
     import matplotlib
-
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import numpy as np
+
+    def moving_average(x: np.ndarray, window: int) -> np.ndarray:
+        if window is None or window <= 1 or window > len(x):
+            return x
+        w = int(window)
+        left, right = w // 2, w - 1 - (w // 2)
+        xpad = np.pad(np.asarray(x, float), (left, right), mode="edge")  # or "reflect"
+        k = np.ones(w, dtype=float) / float(w)
+        return np.convolve(xpad, k, mode="valid")
 
     env_id = exp["env"]
     env_key = safe_env_key(env_id)
@@ -121,10 +129,13 @@ def compare_models_within_experiment(exp: dict, series: dict, models: Dict[str, 
     out_dir = os.path.join(plots_root, "compare", env_key, exp["id"])
     ensure_dir(out_dir)
 
+    # allow per-experiment override; else fall back to series-level smooth
+    smooth = int(exp.get("smooth", series.get("smooth", 1)))
+
     for metric, ylabel, fname in [
         ("returns", "Return", "models_returns.png"),
-        ("steps", "Steps", "models_steps.png"),
-        ("time", "Time (Σ dt)", "models_time.png"),
+        ("steps",   "Steps",  "models_steps.png"),
+        ("time",    "Time (Σ dt)", "models_time.png"),
     ]:
         means = {}
         T = None
@@ -132,9 +143,10 @@ def compare_models_within_experiment(exp: dict, series: dict, models: Dict[str, 
             runs = load_runs(log_root, mid, mcfg["variant"], metric)
             if not runs:
                 continue
-            arr = np.stack([r for r in runs], axis=0)
+            arr = np.stack(runs, axis=0)
             T = len(arr[0]) if T is None else min(T, arr.shape[1])
             means[mid] = arr
+
         if not means or T is None:
             print(f"[compare:skip] {exp['id']} {metric} (no data)")
             continue
@@ -143,20 +155,26 @@ def compare_models_within_experiment(exp: dict, series: dict, models: Dict[str, 
         plt.figure(figsize=(10, 5))
         for mid, arr in sorted(means.items()):
             m = arr[:, :T].mean(axis=0)
+            se = arr[:, :T].std(axis=0) / np.sqrt(arr.shape[0])  # Standard error
+            m = moving_average(m, smooth)  # <-- apply smoothing to mean curve
+            se = moving_average(se, smooth)  # <-- apply smoothing to SE curve
+            
             plt.plot(x, m, label=mid)
-        plt.xlabel("Episode")
-        plt.ylabel(ylabel)
-        plt.title(f"Across-seed mean — {env_id} [{exp['id']}]")
+            plt.fill_between(x, m - se, m + se, alpha=0.3)  # Add SE shading
+
+        title = f"Across-seed mean — {env_id} [{exp['id']}]"
+        if smooth > 1:
+            title += f" (smoothed w={smooth})"
+        plt.xlabel("Episode"); plt.ylabel(ylabel); plt.title(title)
         plt.grid(True, linestyle="--", linewidth=0.5)
         plt.legend()
         out_path = os.path.join(out_dir, fname)
-        plt.tight_layout()
-        plt.savefig(out_path, dpi=150)
-        plt.close()
+        plt.tight_layout(); plt.savefig(out_path, dpi=150); plt.close()
         print(f"[compare] {out_path}")
 
 
 def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
+    import inspect
     env_id = exp["env"]
     seeds = parse_seeds(exp.get("seed_spec", series.get("seed_spec", "0-0")))
     episodes = int(exp.get("episodes", series.get("episodes", 4000)))
@@ -164,7 +182,9 @@ def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
     eval_eps = int(exp.get("eval_episodes", series.get("eval_episodes", 50)))
     gamma = float(series.get("gamma", 0.99))
 
-    # NEW: global (series-level) defaults for decaying stepsizes
+    train_one_params = set(inspect.signature(train_one).parameters.keys())
+    supports_sched = {"alpha_schedule", "alpha_c", "alpha_kappa"}.issubset(train_one_params)
+
     alpha_schedule_default = series.get("alpha_schedule", "constant")
     alpha_c_default       = float(series.get("alpha_c", 1.0))
     alpha_kappa_default   = float(series.get("alpha_kappa", 0.5))
@@ -173,39 +193,29 @@ def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
     for mid, mcfg in models.items():
         variant = mcfg["variant"]
         alpha = float(mcfg.get("alpha", series.get("alpha", 0.2)))
-
-        # epsilon schedule (unchanged)
         eps = mcfg.get("eps", {})
         eps_start = float(eps.get("start", series.get("eps_start", 1.0)))
         eps_end   = float(eps.get("end",   series.get("eps_end", 0.05)))
         eps_decay = int(eps.get("decay_episodes", series.get("eps_decay_episodes", episodes - 500)))
         gamma_m   = float(mcfg.get("gamma", gamma))
 
-        # NEW: per-model overrides for decaying stepsizes
-        alpha_schedule = mcfg.get("alpha_schedule", alpha_schedule_default)          # {"constant","1_over_n","c_over_c_plus_n","power"}
-        alpha_c        = float(mcfg.get("alpha_c", alpha_c_default))                 # used by c/(c+n)
-        alpha_kappa    = float(mcfg.get("alpha_kappa", alpha_kappa_default))         # used by power law
+        alpha_schedule = mcfg.get("alpha_schedule", alpha_schedule_default)
+        alpha_c        = float(mcfg.get("alpha_c", alpha_c_default))
+        alpha_kappa    = float(mcfg.get("alpha_kappa", alpha_kappa_default))
 
         log_root = os.path.join(base_log_root, exp["id"])
         model_root = os.path.join(log_root, mid, variant)
 
         if task in ("train", "all"):
             for sd in seeds:
-                Q, rets, steps, times = train_one(
-                    env_id,
-                    variant,
-                    episodes,
-                    alpha,
-                    gamma_m,
-                    eps_start,
-                    eps_end,
-                    eps_decay,
-                    max_steps,
-                    sd,
-                    alpha_schedule=alpha_schedule,
-                    alpha_c=alpha_c,
-                    alpha_kappa=alpha_kappa,
-                )
+                args_common = [env_id, variant, episodes, alpha, gamma_m,
+                               eps_start, eps_end, eps_decay, max_steps, sd]
+                kwargs = {}
+                if supports_sched:
+                    kwargs.update(dict(alpha_schedule=alpha_schedule,
+                                       alpha_c=alpha_c,
+                                       alpha_kappa=alpha_kappa))
+                Q, rets, steps, times = train_one(*args_common, **kwargs)
                 out_dir = os.path.join(model_root, f"s{sd}")
                 ensure_dir(out_dir)
                 save_csv(os.path.join(out_dir, f"{variant}_returns.csv"), rets)
@@ -218,8 +228,7 @@ def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
 
     if task in ("compare", "all"):
         compare_models_within_experiment(exp, series, models)
-
-
+        
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--series", default="series.yaml", help="Path to main YAML")
