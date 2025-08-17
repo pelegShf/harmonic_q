@@ -1,0 +1,8 @@
+# configs/envs/cliff.yaml
+id: CliffWalkingTab-v0
+max_steps_per_ep: 300
+eval_episodes: 50
+env_kwargs:
+  step_cost: -1.0
+  cliff_penalty: -100.0
+  goal_reward: 0.0

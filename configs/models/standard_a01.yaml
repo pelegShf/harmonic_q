@@ -1,0 +1,5 @@
+id: standard_a02
+variant: standard
+alpha: 0.20
+gamma: 0.99
+eps: { start: 1.0, end: 0.05, decay_episodes: 24000 }

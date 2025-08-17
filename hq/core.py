@@ -67,10 +67,11 @@ def train_one(env_id: str, variant: str, episodes: int, alpha: float, gamma: flo
               # schedules:
               alpha_schedule: str = "constant",   # {"constant","1_over_n","c_over_c_plus_n","power"}
               alpha_c: float = 1.0,
-              alpha_kappa: float = 0.5):
+              alpha_kappa: float = 0.5,
+              env_kwargs: dict | None = None):
     import gymnasium as gym, numpy as np
     rng = np.random.default_rng(seed)
-    env = gym.make(env_id)
+    env = gym.make(env_id, **(env_kwargs or {}))
 
     nS = env.observation_space.n; nA = env.action_space.n
     Q = np.zeros((nS, nA), dtype=np.float64)
@@ -120,7 +121,7 @@ def train_one(env_id: str, variant: str, episodes: int, alpha: float, gamma: flo
                 break
 
         rets.append(ret); steps.append(step_count); times.append(ep_time)
-        if (ep + 1) % 100 == 0:
+        if (ep + 1) % 1000 == 0:
             print(f"[{variant}] ep {ep+1}/{episodes} avg_ret={np.mean(rets):.3f} "
                   f"avg_steps={np.mean(steps):.2f} avg_time={np.mean(times):.3f}")
 

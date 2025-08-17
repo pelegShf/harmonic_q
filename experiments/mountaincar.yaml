@@ -1,6 +1,0 @@
-# experiments/mountaincar.yaml
-env: MountainCarTab-v0
-seed_spec: "0-50"
-episodes: 30000
-max_steps_per_ep: 200
-eval_episodes: 50

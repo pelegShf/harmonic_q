@@ -1,0 +1,3 @@
+id: CartPoleTab-v0
+max_steps_per_ep: 500
+eval_episodes: 50

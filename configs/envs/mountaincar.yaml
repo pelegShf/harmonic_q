@@ -1,0 +1,6 @@
+id: MountainCarTab-v0
+max_steps_per_ep: 200
+eval_episodes: 50
+env_kwargs:
+  bins: [18, 14]
+  goal_bonus: 0.0

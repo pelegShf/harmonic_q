@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 """
 YAML-driven experiment runner for harmonic-vs-standard Q-learning.
@@ -20,10 +21,37 @@ import envs.velocity_grid
 import envs.multistep_grid
 import envs.windy_gridworld
 import envs.mountaincar_tab
+import envs.cartpole_tab
+import envs.cliff_tab
+import envs.frozenlake_tab
 import envs.duration_actions
 
 from hq.core import train_one, evaluate_greedy
 from hq.plotting import runs_with_mean_plot
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
+def _train_seed_job(args_tuple):
+    """Child-process job: train one (model,seed) and return arrays."""
+    (env_id, variant, episodes, alpha, gamma_m,
+     eps_start, eps_end, eps_decay, max_steps, sd) = args_tuple
+
+    # Ensure envs are registered in the child too
+    import envs.velocity_grid
+    import envs.multistep_grid
+    import envs.windy_gridworld
+    import envs.mountaincar_tab
+    import envs.duration_actions
+    try:
+        import envs.cartpole_tab  # optional
+    except Exception:
+        pass
+
+    from hq.core import train_one
+    return sd, train_one(env_id, variant, episodes, alpha, gamma_m,
+                         eps_start, eps_end, eps_decay, max_steps, sd)
+
 
 
 def safe_env_key(env_id: str) -> str:
@@ -173,96 +201,178 @@ def compare_models_within_experiment(exp: dict, series: dict, models: Dict[str, 
         print(f"[compare] {out_path}")
 
 
-def run_experiment(exp: dict, series: dict, models: Dict[str, dict], task: str):
-    import inspect
-    env_id = exp["env"]
-    seeds = parse_seeds(exp.get("seed_spec", series.get("seed_spec", "0-0")))
-    episodes = int(exp.get("episodes", series.get("episodes", 4000)))
-    max_steps = int(exp.get("max_steps_per_ep", series.get("max_steps_per_ep", 300)))
-    eval_eps = int(exp.get("eval_episodes", series.get("eval_episodes", 50)))
-    gamma = float(series.get("gamma", 0.99))
+def load_yaml(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
 
-    train_one_params = set(inspect.signature(train_one).parameters.keys())
-    supports_sched = {"alpha_schedule", "alpha_c", "alpha_kappa"}.issubset(train_one_params)
+def model_id_from_file(path: str, cfg: dict) -> str:
+    # Prefer explicit id in file, else stem
+    if "id" in cfg and cfg["id"]:
+        return str(cfg["id"])
+    return os.path.splitext(os.path.basename(path))[0]
 
-    alpha_schedule_default = series.get("alpha_schedule", "constant")
-    alpha_c_default       = float(series.get("alpha_c", 1.0))
-    alpha_kappa_default   = float(series.get("alpha_kappa", 0.5))
 
+
+def run_experiment(exp: dict, series: dict, models_catalog: Dict[str, dict], task: str):
+    # --- 1) Load env config ---
+    if "env_file" in exp:
+        env_cfg = load_yaml(exp["env_file"])
+        env_id = env_cfg["id"]
+        env_kwargs = env_cfg.get("env_kwargs", {})
+
+        max_steps_default = int(env_cfg.get("max_steps_per_ep", series.get("max_steps_per_ep", 300)))
+        eval_eps_default  = int(env_cfg.get("eval_episodes",   series.get("eval_episodes",   50)))
+    else:
+        # backward compat (old style)
+        env_id = exp["env"]
+        max_steps_default = int(series.get("max_steps_per_ep", 300))
+        eval_eps_default  = int(series.get("eval_episodes",   50))
+
+    # --- 2) Experiment-level knobs override env defaults ---
+    seeds     = parse_seeds(exp.get("seed_spec", series.get("seed_spec", "0-0")))
+    episodes  = int(exp.get("episodes", series.get("episodes", 4000)))
+    max_steps = int(exp.get("max_steps_per_ep", max_steps_default))
+    eval_eps  = int(exp.get("eval_episodes",    eval_eps_default))
+
+    # --- 3) Load models ---
+    loaded_models: Dict[str, dict] = {}
+    if "model_files" in exp:
+        # new style: model files listed per experiment
+        for mpath in exp["model_files"]:
+            mcfg = load_yaml(mpath)
+            mid = model_id_from_file(mpath, mcfg)
+            mcfg = dict(mcfg); mcfg.setdefault("name", mid)
+            loaded_models[mid] = mcfg
+    else:
+        # old style: look up by name in series.models
+        for mid in exp.get("models", []):
+            if mid not in models_catalog:
+                avail = ", ".join(sorted(models_catalog.keys()))
+                raise KeyError(f"Model '{mid}' not found in series.models. Available: [{avail}]")
+            loaded_models[mid] = dict(models_catalog[mid])
+
+    # --- 4) Per-experiment overrides (optional) ---
+    for mid, ov in (exp.get("overrides") or {}).items():
+        if mid in loaded_models:
+            loaded_models[mid] = deep_update(loaded_models[mid], ov)
+
+    # --- 5) Train/plot/compare (unchanged logic) ---
     base_log_root = series.get("log_root", "logs")
-    for mid, mcfg in models.items():
-        variant = mcfg["variant"]
-        alpha = float(mcfg.get("alpha", series.get("alpha", 0.2)))
-        eps = mcfg.get("eps", {})
+    gamma_global  = float(series.get("gamma", 0.99))
+
+    for mid, mcfg in loaded_models.items():
+        variant   = mcfg["variant"]
+        alpha     = float(mcfg.get("alpha", series.get("alpha", 0.2)))
+        gamma_m   = float(mcfg.get("gamma", gamma_global))
+        eps       = mcfg.get("eps", {})
         eps_start = float(eps.get("start", series.get("eps_start", 1.0)))
-        eps_end   = float(eps.get("end",   series.get("eps_end", 0.05)))
+        eps_end   = float(eps.get("end",   series.get("eps_end",   0.05)))
         eps_decay = int(eps.get("decay_episodes", series.get("eps_decay_episodes", episodes - 500)))
-        gamma_m   = float(mcfg.get("gamma", gamma))
 
-        alpha_schedule = mcfg.get("alpha_schedule", alpha_schedule_default)
-        alpha_c        = float(mcfg.get("alpha_c", alpha_c_default))
-        alpha_kappa    = float(mcfg.get("alpha_kappa", alpha_kappa_default))
-
-        log_root = os.path.join(base_log_root, exp["id"])
+        log_root   = os.path.join(base_log_root, exp["id"])
         model_root = os.path.join(log_root, mid, variant)
 
         if task in ("train", "all"):
-            for sd in seeds:
-                args_common = [env_id, variant, episodes, alpha, gamma_m,
-                               eps_start, eps_end, eps_decay, max_steps, sd]
-                kwargs = {}
-                if supports_sched:
-                    kwargs.update(dict(alpha_schedule=alpha_schedule,
-                                       alpha_c=alpha_c,
-                                       alpha_kappa=alpha_kappa))
-                Q, rets, steps, times = train_one(*args_common, **kwargs)
-                out_dir = os.path.join(model_root, f"s{sd}")
-                ensure_dir(out_dir)
-                save_csv(os.path.join(out_dir, f"{variant}_returns.csv"), rets)
-                save_csv(os.path.join(out_dir, f"{variant}_steps.csv"), steps)
-                save_csv(os.path.join(out_dir, f"{variant}_time.csv"), times)
-            print(f"[train] {exp['id']} :: {mid} ({variant}) — seeds={seeds} episodes={episodes}")
+            w = int(series.get("workers", 1))
+            if w > 1:
+                jobs = []
+                for sd in seeds:
+                    jobs.append((env_id, variant, episodes, alpha, gamma_m,
+                                eps_start, eps_end, eps_decay, max_steps, sd))
+                with ProcessPoolExecutor(max_workers=w) as ex:
+                    fut2seed = {ex.submit(_train_seed_job, j): j[-1] for j in jobs}
+                    for fut in as_completed(fut2seed):
+                        sd, (Q, rets, steps, times) = fut.result()
+                        out_dir = os.path.join(model_root, f"s{sd}")
+                        ensure_dir(out_dir)
+                        save_csv(os.path.join(out_dir, f"{variant}_returns.csv"), rets)
+                        save_csv(os.path.join(out_dir, f"{variant}_steps.csv"),   steps)
+                        save_csv(os.path.join(out_dir, f"{variant}_time.csv"),    times)
+            else:
+                for sd in seeds:
+                    Q, rets, steps, times = train_one(
+                        env_id, variant, episodes, alpha, gamma_m,
+                        eps_start, eps_end, eps_decay, max_steps, sd,
+                        env_kwargs=env_kwargs
+                    )
+                    out_dir = os.path.join(model_root, f"s{sd}")
+                    ensure_dir(out_dir)
+                    save_csv(os.path.join(out_dir, f"{variant}_returns.csv"), rets)
+                    save_csv(os.path.join(out_dir, f"{variant}_steps.csv"),   steps)
+                    save_csv(os.path.join(out_dir, f"{variant}_time.csv"),    times)
+
 
         if task in ("plot", "all"):
-            plot_model_aggregates(exp, series, mid, mcfg)
+            plot_model_aggregates({"env": env_id, "id": exp["id"]}, series, mid, mcfg)
 
     if task in ("compare", "all"):
-        compare_models_within_experiment(exp, series, models)
-        
+        cmp_models = {mid: {"variant": mcfg["variant"]} for mid, mcfg in loaded_models.items()}
+        compare_models_within_experiment({"env": env_id, "id": exp["id"]}, series, cmp_models)
+
+def resolve_experiments(series: dict) -> list[dict]:
+    """
+    Accepts either:
+      - experiments: [ {...}, {...} ]           # current format (list)
+      - experiments: {id: {...}, id2: {...}}    # catalog map
+    Optionally filters by:
+      - experiments_to_run: [id, id2, ...]
+    Returns a list of experiment dicts with an 'id' field set.
+    """
+    exps = series.get("experiments", [])
+    run_ids = series.get("experiments_to_run")
+
+    # Case A: catalog map {id: cfg}
+    if isinstance(exps, dict):
+        catalog = exps
+        ids = run_ids or list(catalog.keys())
+        out = []
+        for eid in ids:
+            if eid not in catalog:
+                avail = ", ".join(sorted(catalog.keys()))
+                raise KeyError(f"Experiment '{eid}' not in catalog. Available: [{avail}]")
+            item = dict(catalog[eid])  # shallow copy
+            item.setdefault("id", eid)
+            out.append(item)
+        return out
+
+    # Case B: existing list format
+    if isinstance(exps, list):
+        if run_ids:
+            wanted = set(run_ids)
+            return [e for e in exps if e.get("id") in wanted]
+        return exps
+
+    # Fallback
+    return []
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--series", default="series.yaml", help="Path to main YAML")
-    ap.add_argument(
-        "--task", choices=["train", "plot", "compare", "all"], default="all"
-    )
+    ap.add_argument("--task", choices=["train", "plot", "compare", "all"], default="all")
+    ap.add_argument("--workers", type=int, default=None,
+                help="Parallel processes for training seeds (default: series.yaml 'workers' or 1)")
+
     args = ap.parse_args()
 
     with open(args.series, "r", encoding="utf-8") as f:
         series = yaml.safe_load(f)
+    workers = int(args.workers if args.workers is not None else series.get("workers", 1))
+    series["workers"] = workers  # stash for run_experiment
 
-    model_defs = series.get("models", {})
-    experiments = series.get("experiments", [])
+    models_catalog = series.get("models", {})  # used only by old-style experiments
+    experiments = resolve_experiments(series)  # <-- use your existing helper
+
     for exp_entry in experiments:
+        # keep support for your old 'file:' style (optional)
         if "file" in exp_entry:
-            with open(exp_entry["file"], "r", encoding="utf-8") as ef:
-                base_exp = yaml.safe_load(ef)
+            base_exp = load_yaml(exp_entry["file"])
+            exp_cfg  = deep_update(base_exp, exp_entry)
         else:
-            base_exp = {}
-        exp_cfg = deep_update(base_exp, exp_entry)
+            exp_cfg  = dict(exp_entry)
+
         exp_cfg.setdefault("id", exp_entry.get("id", "exp"))
+        run_experiment(exp_cfg, series, models_catalog, task=args.task)
 
-        exp_models = {}
-        for mid in exp_cfg.get("models", []):
-            if mid not in model_defs:
-                raise KeyError(f"Model '{mid}' not found in series.models")
-            merged = deep_update(
-                model_defs[mid], exp_cfg.get("overrides", {}).get(mid, {})
-            )
-            merged = dict(merged)
-            merged.setdefault("name", mid)
-            exp_models[mid] = merged
-
-        run_experiment(exp_cfg, series, exp_models, task=args.task)
 
 
 if __name__ == "__main__":

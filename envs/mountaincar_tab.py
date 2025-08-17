@@ -50,10 +50,11 @@ class MountainCarTab(gym.Env):
 
     # ---------- helpers ----------
     def _to_indices(self, obs: np.ndarray) -> tuple[int, int]:
-        # np.digitize returns bin index in [0..n_bins]; with our edges it yields [0..n_bins-1]
-        i_pos = int(np.digitize(obs[0], self._edges[0], right=False))
-        i_vel = int(np.digitize(obs[1], self._edges[1], right=False))
-        # Safety: clip just in case of numeric edge cases
+        o = np.clip(np.asarray(obs, dtype=float),
+                    [self._base.observation_space.low[0], self._base.observation_space.low[1]],
+                    [self._base.observation_space.high[0], self._base.observation_space.high[1]])
+        i_pos = int(np.digitize(o[0], self._edges[0], right=False))
+        i_vel = int(np.digitize(o[1], self._edges[1], right=False))
         i_pos = int(np.clip(i_pos, 0, self._bins[0] - 1))
         i_vel = int(np.clip(i_vel, 0, self._bins[1] - 1))
         return i_pos, i_vel

@@ -1,0 +1,3 @@
+id: VelocityGrid-v0
+max_steps_per_ep: 300
+eval_episodes: 50

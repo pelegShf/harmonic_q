@@ -1,0 +1,5 @@
+id: harmonic_a01
+variant: harmonic
+alpha: 0.10
+gamma: 0.99
+eps: { start: 1.0, end: 0.05, decay_episodes: 24000 }

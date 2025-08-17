@@ -1,49 +1,59 @@
 # series.yaml — define models and which experiments to run
 log_root: logs
 plots_root: plots
-gamma: 0.99
-episodes: 8000
-eps_start: 1.0
-eps_end: 0.05
-eps_decay_episodes: 7600
-max_steps_per_ep: 300
-eval_episodes: 50
 smooth: 500
 
-alpha_schedule: constant      # {constant, 1_over_n, c_over_c_plus_n, power}
-alpha_c: 1.0
-alpha_kappa: 0.5
 
-models:
-  ############## Standard ##############
-  standard_a01:
-    variant: standard
-    alpha: 0.05
-    eps: {start: 1.0, end: 0.05, decay_episodes: 10000}  
-
-  standard_a02:
-    variant: standard
-    alpha: 0.20
-    eps: {start: 1.0, end: 0.05, decay_episodes: 10000}
-
-
-
-############## Harmonic ##############
-  harmonic_a01:
-      variant: harmonic
-      alpha: 0.10
-      eps: {start: 1.0, end: 0.05, decay_episodes: 10000}
-
-  harmonic_a02:
-    variant: harmonic
-    alpha: 0.05
-    eps: {start: 1.0, end: 0.05, decay_episodes: 10000}
 
 experiments:
-  - id: compare_mc
-    file: experiments/mountaincar.yaml
-    models: [  standard_a01,standard_a02, harmonic_a01, harmonic_a02]
+  # Each experiment: pick an env file + a list of model files
+  - id: mc30k
+    env_file: configs/envs/mountaincar.yaml
+    model_files:
+      - configs/models/standard_a01.yaml
+      - configs/models/harmonic_a02.yaml
+    # experiment-scoped knobs (overriding env/model defaults)
+    seed_spec: "0-20"
+    episodes: 30000
 
-  - id: compare_windy
-    file: experiments/windy.yaml
-    models: [  standard_a01,standard_a02, harmonic_a01, harmonic_a02]
+
+  - id: windy8k
+    env_file: configs/envs/windy.yaml
+    model_files:
+      - configs/models/standard_a01.yaml
+      - configs/models/harmonic_a02.yaml
+    seed_spec: "0-20"
+    episodes: 8000
+    overrides:
+      harmonic_a02:
+        eps: { start: 1.0, end: 0.05, decay_episodes: 6400 }
+      standard_a01:
+        eps: { start: 1.0, end: 0.05, decay_episodes: 6400 }
+
+  - id: cliff12k
+    env_file: configs/envs/cliff.yaml
+    model_files:
+      - configs/models/standard_a01.yaml
+      - configs/models/harmonic_a02.yaml
+    seed_spec: "0-20"
+    episodes: 12000
+    overrides:
+      harmonic_a02:
+        eps: { start: 1.0, end: 0.05, decay_episodes: 9600 }
+      standard_a01:
+        eps: { start: 1.0, end: 0.05, decay_episodes: 9600 }
+
+  - id: frozenlake12k
+    env_file: configs/envs/frozenlake.yaml
+    model_files:
+      - configs/models/standard_a01.yaml
+      - configs/models/harmonic_a02.yaml
+    seed_spec: "0-20"
+    episodes: 24000
+    overrides:
+      harmonic_a02:
+        eps: { start: 1.0, end: 0.05, decay_episodes: 10000 }
+      standard_a01:
+        eps: { start: 1.0, end: 0.05, decay_episodes: 10000 }
+
+experiments_to_run: [frozenlake12k]
